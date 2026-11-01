@@ -1,0 +1,9 @@
+import test from 'node:test';import assert from 'node:assert/strict';
+import {newLab,reducer,instrument,circuitChecklist} from '../src/lab.js';
+const act=(s,type,more={})=>reducer(s,{type,...more});
+test('Selecting a fresh chemical automatically prepares 4mL and rinses electrodes',()=>{let s=newLab();s=act(s,'SELECT',{id:'nacl'});assert.equal(s.prepared,true);assert.equal(s.volumeMl,4);assert.equal(s.electrodesClean,true);});
+test('Changing concentration prepares a new sample',()=>{let s=act(newLab(),'SELECT',{id:'nacl'});s=act(s,'CONCENTRATION',{value:0.01});assert.equal(s.prepared,true);assert.equal(s.volumeMl,4);});
+test('Live checklist distinguishes incomplete circuit from non electrolyte',()=>{let s=act(newLab(),'SELECT',{id:'sucrose'});assert.equal(instrument(s).isReady,false);s=act(s,'CONNECT');s=act(s,'SUBMERGE');s=act(s,'POWER');assert.equal(instrument(s).isReady,true);assert.equal(instrument(s).brightness,'off');assert.ok(circuitChecklist(s).every(x=>x.ok));});
+test('NaCl lights when all conditions are satisfied',()=>{let s=act(newLab(),'SELECT',{id:'nacl'});s=act(s,'CONNECT');s=act(s,'SUBMERGE');s=act(s,'POWER');assert.notEqual(instrument(s).brightness,'off');});
+test('Changing chemical resets submerged and power but preserves connection',()=>{let s=act(newLab(),'SELECT',{id:'nacl'});s=act(s,'CONNECT');s=act(s,'SUBMERGE');s=act(s,'POWER');s=act(s,'SELECT',{id:'hcl'});assert.equal(s.electrodesSubmerged,false);assert.equal(s.powerOn,false);assert.equal(s.circuitConnected,true);});
+test('After record selecting a new substance auto rinses',()=>{let s=act(newLab(),'SELECT',{id:'nacl'});s=act(s,'LITMUS',{color:'red'});s=act(s,'LITMUS',{color:'blue'});s=act(s,'CONNECT');s=act(s,'SUBMERGE');s=act(s,'POWER');s=act(s,'RECORD',{classification:'strong'});assert.equal(s.electrodesClean,false);s=act(s,'SELECT',{id:'hcl'});assert.equal(s.electrodesClean,true);assert.equal(s.prepared,true);});

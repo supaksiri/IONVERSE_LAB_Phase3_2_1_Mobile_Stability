@@ -1,0 +1,42 @@
+import {ALL_CHEMICALS,CHEMICALS,CLASSIFICATION_LABELS,computeSolution,classifyLitmus} from './chemistry.js';
+import {newLab,reducer,instrument,circuitChecklist} from './lab.js';
+import {createMobileLab} from './mobile-lab.js';
+let state=load();
+let scene=null;
+let splashUntil=0;
+const $=id=>document.getElementById(id);
+function load(){try{const x=JSON.parse(localStorage.getItem('ionverse-v32'));if(!x||!ALL_CHEMICALS.some(s=>s.id===x.id))return {...newLab(),prepared:true,volumeMl:4};return {...newLab(),...x};}catch{return newLab();}}
+function dispatch(a){try{if(a.type==='PREPARE')splashUntil=performance.now()+1700;state=reducer(state,a);localStorage.setItem('ionverse-v32',JSON.stringify(state));render();}catch(e){$('warning').textContent=e.message;}}
+function makeChemicals(){const box=$('chemicals');box.innerHTML='';for(const c of CHEMICALS){const b=document.createElement('button');b.className='chemical';b.dataset.id=c.id;b.innerHTML=`<span class="formula">${c.formula}</span><span class="desc">${c.name}</span>`;b.addEventListener('click',()=>{dispatch({type:'SELECT',id:c.id});$('classification').value='';});b.draggable=true;b.addEventListener('dragstart',e=>{e.dataTransfer.setData('text/plain',c.id);});box.append(b);}}
+function render(){const c=computeSolution(state.id,state.concentration);const ins=instrument(state);$('concentration').value=String(state.concentration);$('sampleLabel').textContent=`${c.chemical.formula} · ${c.chemical.name}`;
+ for(const b of document.querySelectorAll('.chemical'))b.classList.toggle('selected',b.dataset.id===state.id);
+ $('signal').textContent=ins.isReady?ins.level.toFixed(1):'—';$('signalBar').style.width=ins.level+'%';$('status').textContent=ins.message;const missing=ins.missing||[];$('circuitChecklist').innerHTML=circuitChecklist(state).map(x=>`<span class="step-pill ${x.ok?'step-ok':'step-wait'}">${x.ok?'✓':'○'} ${x.label}</span>`).join('');$('instrumentHint').textContent=ins.isReady?(ins.brightness==='off'?'วงจรพร้อมวัด แต่สารนี้ไม่ทำให้หลอดไฟสว่างในแบบจำลอง':'วงจรพร้อมและเครื่องมือกำลังแสดงผล'):('วงจรยังไม่พร้อม: '+missing.map(x=>x.label).join(' • '));
+ $('brightness').textContent={off:'ไม่ติด',dim:'สว่างน้อย',medium:'สว่างปานกลาง',bright:'สว่างมาก'}[ins.brightness];if(scene)scene.update({state,solution:c,instrument:ins,prepared:state.prepared,splashUntil});
+ $('cleanliness').textContent=state.electrodesClean?'สะอาด':'ต้องล้าง';$('circuitBadge').textContent=ins.isReady?'● กำลังวัด':state.circuitConnected?'◒ ต่อวงจรแล้ว':'○ วงจรยังไม่พร้อม';
+ $('connect').textContent=state.circuitConnected?'① ถอดวงจร':'① ต่อวงจร';$('submerge').textContent=state.electrodesSubmerged?'② ยกขั้วไฟฟ้า':'② จุ่มขั้วไฟฟ้า';$('power').textContent=state.powerOn?'③ ปิดสวิตช์':'③ เปิดสวิตช์';
+ for(const color of ['red','blue']){const val=state.litmus[color];$(color+'Display').className='strip '+color+(val&&val!==color?' '+val+'-result':'');$(color+'Result').textContent=val===null?'ยังไม่ทดสอบ':val===color?'สีไม่เปลี่ยน':val==='blue'?'เปลี่ยนเป็นสีน้ำเงิน':'เปลี่ยนเป็นสีแดง';}
+ $('warning').textContent=state.warning || (!ins.isReady?'ตรวจขั้นตอนที่ยังไม่ครบจากรายการด้านบน':'พร้อมวัดผล • จึงค่อยบันทึกการจำแนก');renderNotebook();}
+function renderParticles(c){const box=$('particles');box.innerHTML='';const entries=Object.keys(c.ionCounts);if(!entries.length)return;const n=Math.max(0,Math.round(c.relativeIndex/7));for(let i=0;i<Math.min(20,n);i++){const el=document.createElement('span');el.className=i%2===0?'p':'n';el.style.left=(8+(i*37)%84)+'%';el.style.top=(8+(i*29)%72)+'%';el.style.animationDelay='-'+i*.3+'s';box.append(el);}}
+function renderNotebook(){const rows=state.history;$('progressLabel').textContent=`บันทึกแล้ว ${rows.length} รายการจาก ${CHEMICALS.length} สารหลัก (อาจมีหลายความเข้มข้น)`;$('records').innerHTML=rows.length?rows.map(r=>{const c=ALL_CHEMICALS.find(x=>x.id===r.id);return `<tr><td>${c.formula}</td><td>${r.concentration} M</td><td>${r.red==='red'?'แดง':'น้ำเงิน'}</td><td>${r.blue==='blue'?'น้ำเงิน':'แดง'}</td><td>${r.relativeIndex.toFixed(1)}/100</td><td>${{off:'ไม่ติด',dim:'น้อย',medium:'ปานกลาง',bright:'มาก'}[r.brightness]}</td><td>${CLASSIFICATION_LABELS[r.classification]||'ยังไม่ตอบ'}</td></tr>`;}).join(''):'<tr><td colspan="7">ยังไม่มีผลการทดลอง</td></tr>';}
+function runChecks(){let pass=0;const checks=CHEMICALS.map(c=>{const r=computeSolution(c.id,0.1);const ok=Number.isFinite(r.pH)&&r.pH>=0&&r.pH<=14&&classifyLitmus(r.litmus)!==undefined&& (c.type==='none'?r.relativeIndex===0:r.relativeIndex>0);if(ok)pass++;return {ok,c,r};});$('testSummary').textContent=`ตรวจสอบพื้นฐาน ${pass} / ${checks.length} สารผ่าน · ตรวจครบ 12 ชนิด · การตรวจนี้ไม่แทนการเทียบค่ากับข้อมูลอ้างอิงภายนอก`;$('testItems').innerHTML=checks.map(({ok,c,r})=>`<div class="test-case ${ok?'':'fail'}"><b>${ok?'✓':'✕'} ${c.formula}</b><small>${c.name}<br>pH แบบจำลอง ≈ ${r.pH.toFixed(2)} | ${CLASSIFICATION_LABELS[c.type]}<br>ลิตมัส: แดง→${r.litmus.red==='red'?'แดง':'น้ำเงิน'} / น้ำเงิน→${r.litmus.blue==='blue'?'น้ำเงิน':'แดง'}</small></div>`).join('');}
+function csv(){const rows=state.history;if(!rows.length){alert('ยังไม่มีผลการทดลองให้ส่งออก');return;}const header=['id','formula','concentration_M','litmus_red','litmus_blue','relative_signal_0_100','brightness','student_classification','timestamp'];const body=rows.map(r=>[r.id,ALL_CHEMICALS.find(s=>s.id===r.id).formula,r.concentration,r.red,r.blue,r.relativeIndex.toFixed(2),r.brightness,r.classification||'',r.at]);const data='\uFEFF'+[header,...body].map(a=>a.map(x=>'"'+String(x).replaceAll('"','""')+'"').join(',')).join('\r\n');const u=URL.createObjectURL(new Blob([data],{type:'text/csv;charset=utf-8;'}));const a=document.createElement('a');a.href=u;a.download='IONVERSE_LAB_results.csv';a.click();URL.revokeObjectURL(u);}
+for(const n of document.querySelectorAll('[data-tab]'))n.addEventListener('click',()=>{for(const b of document.querySelectorAll('.nav'))b.classList.toggle('active',b.dataset.tab===n.dataset.tab);for(const s of document.querySelectorAll('.tabview'))s.classList.toggle('hidden',s.id!==n.dataset.tab);if(n.dataset.tab==='tests')runChecks();});
+const dropZone=$('threeViewport');dropZone.addEventListener('dragover',e=>e.preventDefault());dropZone.addEventListener('drop',e=>{e.preventDefault();const id=e.dataTransfer.getData('text/plain');if(ALL_CHEMICALS.some(c=>c.id===id)){dispatch({type:'SELECT',id});$('classification').value='';}});
+$('prepare').onclick=()=>dispatch({type:'PREPARE'});$('resetCamera').onclick=()=>scene?.resetCamera();
+$('concentration').addEventListener('change',e=>dispatch({type:'CONCENTRATION',value:e.target.value}));$('waterControl').addEventListener('click',()=>{dispatch({type:'SELECT',id:'water'});$('classification').value='';});$('connect').onclick=()=>dispatch({type:'CONNECT'});$('submerge').onclick=()=>dispatch({type:'SUBMERGE'});$('power').onclick=()=>dispatch({type:'POWER'});$('rinse').onclick=()=>dispatch({type:'RINSE'});$('redStrip').onclick=()=>dispatch({type:'LITMUS',color:'red'});$('blueStrip').onclick=()=>dispatch({type:'LITMUS',color:'blue'});$('record').onclick=()=>dispatch({type:'RECORD',classification:$('classification').value});$('exportCSV').onclick=csv;$('runChecks').onclick=runChecks;$('reset').onclick=()=>{if(confirm('ล้างข้อมูลการทดลองทั้งหมดในเบราว์เซอร์นี้?')){dispatch({type:'RESET'});$('classification').value='';}};
+makeChemicals();render();runChecks();
+const labEvents={onPrepare:()=>dispatch({type:'PREPARE'}),onRinse:()=>dispatch({type:'RINSE'}),onConnect:()=>dispatch({type:'CONNECT'}),onSubmerge:()=>dispatch({type:'SUBMERGE'}),onPower:()=>dispatch({type:'POWER'}),onLitmusRed:()=>dispatch({type:'LITMUS',color:'red'}),onLitmusBlue:()=>dispatch({type:'LITMUS',color:'blue'})};
+const fallbackScene=createMobileLab($('mobileLab'),labEvents);
+scene=fallbackScene;
+$('resetCamera').onclick=()=>scene?.resetCamera();
+render();
+// Progressive enhancement: desktop 3D is optional. Mobile always uses self-contained animated SVG.
+const mobile=window.matchMedia('(max-width: 900px), (pointer: coarse)').matches;
+if(!mobile){
+  import('./scene3d.js').then(m=>m.createScene($('threeViewport'),labEvents)).then(s=>{
+    scene=s;$('mobileLab').classList.add('hidden');render();
+  }).catch(e=>{
+    console.warn('3D unavailable; interactive SVG lab remains active:',e);
+    $('threeViewport').replaceChildren();$('threeFallback').classList.add('hidden');scene=fallbackScene;render();
+  });
+}

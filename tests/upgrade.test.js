@@ -1,0 +1,11 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {newLab,reducer,instrument} from '../src/lab.js';
+import {computeSolution,CHEMICALS} from '../src/chemistry.js';
+const go=(s,a)=>reducer(s,a);
+test('Cannot test without preparing a sample',()=>{const s=go(newLab(),{type:'LITMUS',color:'red'});assert.equal(s.litmus.red,null);assert.ok(s.warning);});
+test('Prepared sample maintains volume in canonical state',()=>{const s=go(newLab(),{type:'PREPARE'});assert.equal(s.prepared,true);assert.equal(s.volumeMl,4);});
+test('Circuit cannot measure without sample',()=>{let s=newLab();s=go(s,{type:'CONNECT'});s=go(s,{type:'POWER'});assert.equal(instrument(s).isReady,false);});
+test('Independent repeats remain in notebook',()=>{let s=newLab();for(let i=0;i<2;i++){s=go(s,{type:'PREPARE'});s=go(s,{type:'LITMUS',color:'red'});s=go(s,{type:'LITMUS',color:'blue'});if(!s.circuitConnected)s=go(s,{type:'CONNECT'});s=go(s,{type:'SUBMERGE'});s=go(s,{type:'POWER'});s=go(s,{type:'RECORD',classification:'strong'});s=go(s,{type:'RINSE'});}assert.equal(s.history.length,2);assert.equal(Object.keys(s.observations).length,2);assert.notEqual(s.history[0].runId,s.history[1].runId);});
+test('No artificial plateau across concentrations',()=>{const a=computeSolution('nacl',.1),b=computeSolution('nacl',.5),c=computeSolution('nacl',1);assert.ok(a.relativeIndex<b.relativeIndex&&b.relativeIndex<c.relativeIndex);});
+test('Twelve sample chemicals produce finite signals and pH',()=>{for(const s of CHEMICALS){const x=computeSolution(s.id,.1);assert.ok(Number.isFinite(x.pH));assert.ok(Number.isFinite(x.relativeIndex));}});
